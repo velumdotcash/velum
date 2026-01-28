@@ -1,0 +1,246 @@
+import { CodeBlock, Callout, Steps, Step } from '@/components/docs';
+
+# Developer Guide
+
+Integrate Velum private payments into your application using the official npm packages.
+
+## Packages
+
+| Package | Purpose | Install |
+|---------|---------|---------|
+| [`@velumdotcash/api`](https://www.npmjs.com/package/@velumdotcash/api) | Server-side REST client (paylinks, transactions) | `npm install @velumdotcash/api` |
+| [`@velumdotcash/sdk`](https://www.npmjs.com/package/@velumdotcash/sdk) | Client-side ZK operations (deposit, withdraw, proofs) | `npm install @velumdotcash/sdk` |
+
+---
+
+## Server-Side: `@velumdotcash/api`
+
+Use `@velumdotcash/api` to create and manage payment links from your backend.
+
+### Installation
+
+<CodeBlock language="bash">
+npm install @velumdotcash/api
+</CodeBlock>
+
+### Create a Payment Link
+
+<CodeBlock language="typescript" filename="server.ts">
+{`import { VelumClient } from "@velumdotcash/api";
+
+const client = new VelumClient({
+  apiKey: process.env.VELUM_API_KEY!,
+  // baseUrl defaults to "https://velum.cash/api"
+});
+
+// Create a payment link
+const paylink = await client.paylinks.create({
+  recipientUtxoPubkey: "21888242871839...",
+  recipientEncryptionKey: "base64encodedkey...",
+  token: "USDC",
+  amountLamports: "1000000", // 1 USDC
+  memo: "Order #12345",
+});
+
+// Redirect your user to paylink.url
+console.log(paylink.url); // https://velum.cash/pay/clx1234...`}
+</CodeBlock>
+
+### Retrieve a Payment Link
+
+<CodeBlock language="typescript">
+{`const paylink = await client.paylinks.get("clx1234567890");
+console.log(paylink.token, paylink.amountLamports);`}
+</CodeBlock>
+
+### Log Transactions
+
+<CodeBlock language="typescript">
+{`await client.transactions.log({
+  type: "deposit",
+  token: "USDC",
+  amountLamports: "1000000",
+  signature: "5xK9m...",
+  status: "confirmed",
+  paylinkId: "clx1234567890",
+});
+
+const history = await client.transactions.list({
+  type: "deposit",
+  token: "USDC",
+  limit: 20,
+});`}
+</CodeBlock>
+
+### Error Handling
+
+<CodeBlock language="typescript">
+{`import { VelumClient, VelumApiError } from "@velumdotcash/api";
+
+try {
+  await client.paylinks.get("nonexistent");
+} catch (err) {
+  if (err instanceof VelumApiError) {
+    console.error(err.code);    // "NOT_FOUND"
+    console.error(err.message); // "Paylink not found"
+    console.error(err.status);  // 404
+  }
+}`}
+</CodeBlock>
+
+---
+
+## Client-Side: `@velumdotcash/sdk`
+
+Use `@velumdotcash/sdk` for client-side ZK proof generation, deposits, and withdrawals.
+
+### Installation
+
+<CodeBlock language="bash">
+npm install @velumdotcash/sdk
+</CodeBlock>
+
+### Initialize the SDK
+
+The SDK derives shielded keys from a wallet signature. The same wallet + message always produces the same keys.
+
+<CodeBlock language="typescript" filename="client.ts">
+{`import { Velum } from "@velumdotcash/sdk";
+
+// 1. Sign a deterministic message with the user's wallet
+const message = new TextEncoder().encode(
+  \`Welcome to Velum\\n\\nWallet: \${publicKey.toBase58()}\`
+);
+const signature = await wallet.signMessage(message);
+
+// 2. Initialize the SDK
+const sdk = new Velum({
+  RPC_url: "https://api.mainnet-beta.solana.com",
+  publicKey: publicKey,
+  signature: signature,
+  transactionSigner: async (tx) => {
+    return await wallet.signTransaction(tx);
+  },
+});
+
+// 3. Get the shielded public keys (use these in payment links)
+const encryptionPubkey = sdk.getAsymmetricPublicKey();
+const utxoPubkey = await sdk.getShieldedPublicKey();`}
+</CodeBlock>
+
+### Deposit (Shield Funds)
+
+<CodeBlock language="typescript">
+{`// Deposit SOL
+const result = await sdk.deposit({ lamports: 10_000_000 }); // 0.01 SOL
+console.log(result.tx); // transaction signature
+
+// Deposit to a third-party recipient (paylink flow)
+await sdk.deposit({
+  lamports: 10_000_000,
+  recipientUtxoPublicKey: paylink.recipientUtxoPubkey,
+  recipientEncryptionKey: Buffer.from(paylink.recipientEncryptionKey, "base64"),
+});
+
+// Deposit USDC
+await sdk.depositUSDC({ base_units: 1_000_000 }); // 1 USDC
+
+// Deposit any SPL token
+await sdk.depositSPL({
+  base_units: 1_000_000,
+  mintAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // USDT
+});`}
+</CodeBlock>
+
+### Withdraw (Unshield Funds)
+
+<CodeBlock language="typescript">
+{`// Withdraw SOL to any address
+const result = await sdk.withdraw({
+  lamports: 10_000_000,
+  recipientAddress: "Destination...",
+});
+
+// Withdraw USDC
+await sdk.withdrawUSDC({
+  base_units: 1_000_000,
+  recipientAddress: "Destination...",
+});
+
+// Withdraw any SPL token
+await sdk.withdrawSPL({
+  base_units: 1_000_000,
+  mintAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  recipientAddress: "Destination...",
+});`}
+</CodeBlock>
+
+### Check Private Balance
+
+<CodeBlock language="typescript">
+{`const solBalance = await sdk.getPrivateBalance();
+console.log(solBalance.lamports);
+
+const usdcBalance = await sdk.getPrivateBalanceUSDC();
+console.log(usdcBalance.base_units);
+
+// Any SPL token
+const usdtBalance = await sdk.getPrivateBalanceSpl("Es9vMF...");
+console.log(usdtBalance.base_units);`}
+</CodeBlock>
+
+---
+
+## Full Integration Example
+
+A typical integration combines both packages:
+
+<CodeBlock language="typescript" filename="Backend: Create payment link">
+{`// Your backend creates the payment link
+import { VelumClient } from "@velumdotcash/api";
+
+const client = new VelumClient({ apiKey: process.env.VELUM_API_KEY! });
+
+app.post("/checkout", async (req, res) => {
+  const paylink = await client.paylinks.create({
+    recipientUtxoPubkey: req.body.utxoPubkey,
+    recipientEncryptionKey: req.body.encryptionKey,
+    token: "USDC",
+    amountLamports: req.body.amount,
+  });
+
+  res.json({ paymentUrl: paylink.url });
+});`}
+</CodeBlock>
+
+<CodeBlock language="typescript" filename="Frontend: User pays">
+{`// Your frontend uses the SDK to execute the payment
+import { Velum } from "@velumdotcash/sdk";
+
+async function payLink(paylinkId: string) {
+  const res = await fetch(\`https://velum.cash/api/v1/paylinks/\${paylinkId}\`, {
+    headers: { "x-api-key": apiKey },
+  });
+  const paylink = await res.json();
+
+  await sdk.deposit({
+    lamports: Number(paylink.amountLamports),
+    recipientUtxoPublicKey: paylink.recipientUtxoPubkey,
+    recipientEncryptionKey: Buffer.from(paylink.recipientEncryptionKey, "base64"),
+  });
+}`}
+</CodeBlock>
+
+---
+
+## Security Considerations
+
+<Callout type="warning">
+Never expose your API key on the client side. Use `@velumdotcash/api` only in server environments.
+</Callout>
+
+- Store API keys in environment variables, never in client bundles
+- The `@velumdotcash/sdk` handles all cryptographic operations client-side
+- Wallet signatures used for key derivation never leave the browser
+- Use HTTPS for all API calls
+- Implement rate limiting on your backend endpoints

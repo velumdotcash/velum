@@ -1,0 +1,152 @@
+import { CodeBlock, Callout, ZKCircuitDiagram } from '@/components/docs';
+
+# Zero-Knowledge Proofs
+
+How Velum uses ZK circuits to verify transactions without revealing sender, recipient, or amounts.
+
+## The Circuit
+
+Velum uses a **Groth16** proof system with a custom circuit called `transaction2`. This circuit verifies four properties simultaneously, without revealing any private inputs.
+
+<ZKCircuitDiagram />
+
+## What the Proof Hides
+
+The ZK proof creates a clear boundary between what an on-chain observer can see and what remains private:
+
+| Observer Sees | Observer Cannot See |
+|--------------|-------------------|
+| A transaction occurred | Which UTXO was spent |
+| Net deposit/withdrawal amount | Who owns the UTXO |
+| Merkle root (state commitment) | Private keys |
+| Nullifiers (anti-double-spend) | Blinding factors |
+| New output commitments | Individual UTXO amounts |
+
+<Callout type="info">
+The proof guarantees correctness — funds cannot be created from nothing, double-spent, or stolen — while revealing absolutely nothing about the transaction's participants or internal structure.
+</Callout>
+
+## Proof Generation
+
+Proofs are generated **client-side in the browser** using snarkjs and WebAssembly. No server ever sees private inputs.
+
+<CodeBlock language="typescript" filename="Proof Generation (Simplified)" showLineNumbers>
+{`const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+  {
+    // Private inputs (never leave the browser)
+    inAmount: [utxo1.amount, utxo2.amount],
+    inBlinding: [utxo1.blinding, utxo2.blinding],
+    inPrivateKey: [utxo1.keypair.privkey, utxo2.keypair.privkey],
+    inPathElements: [merkleProof1.elements, merkleProof2.elements],
+    inPathIndices: [merkleProof1.indices, merkleProof2.indices],
+    outAmount: [outUtxo1.amount, outUtxo2.amount],
+    outBlinding: [outUtxo1.blinding, outUtxo2.blinding],
+    outPubkey: [outUtxo1.pubkey, outUtxo2.pubkey],
+
+    // Public inputs (verified on-chain)
+    root: currentMerkleRoot,
+    publicAmount: depositAmount,
+    extDataHash: hashOfExternalData,
+    inputNullifier: [nullifier1, nullifier2],
+    outputCommitment: [commitment1, commitment2],
+  },
+  circuitWasm,   // transaction2.wasm (~3 MB)
+  provingKey     // transaction2.zkey (~16 MB)
+);`}
+</CodeBlock>
+
+## Circuit Files
+
+The circuit requires two files that are loaded lazily in the browser:
+
+| File | Size | Purpose |
+|------|------|---------|
+| `transaction2.wasm` | ~3 MB | Compiled circuit (constraint system) |
+| `transaction2.zkey` | ~16 MB | Proving key (from trusted setup ceremony) |
+
+<CodeBlock language="typescript" filename="Lazy Loading with Cache" showLineNumbers>
+{`// Files are cached in IndexedDB after first download
+// Subsequent loads are instant from cache
+
+// Loading strategy:
+// 1. Check IndexedDB cache (by CIRCUIT_VERSION)
+// 2. If miss: fetch from /circuit.wasm and /circuit.zkey
+// 3. Show download progress (0-100%)
+// 4. Store in cache for next time
+// 5. Generate proof (~2-5 seconds)
+
+// Prefetch hint: after 5s idle on /pay or /withdraw pages
+// the files start downloading in the background`}
+</CodeBlock>
+
+<Callout type="tip">
+Proof generation happens entirely in the browser. The proving key and circuit never need to be trusted by the user — they can verify the circuit's constraints are correct by inspecting the open-source circom code.
+</Callout>
+
+---
+
+## On-Chain Components
+
+The ZK proof is verified on-chain by Privacy Cash's verifier contract. The on-chain state consists of four components:
+
+### Merkle Tree
+
+<CodeBlock language="plaintext" filename="Merkle Tree Structure">
+{`Merkle Tree (depth: 26)
+├── Stores UTXO commitments as leaves
+├── Capacity: 2^26 = 67,108,864 leaves
+├── Hash function: Poseidon (ZK-friendly)
+└── Root published in every transaction
+
+When a new UTXO is created:
+  1. Compute commitment = Poseidon(amount, pubkey, blinding, mint)
+  2. Insert commitment at next available leaf
+  3. Update root hash (path from leaf to root)
+  4. New root becomes the "current state"`}
+</CodeBlock>
+
+### Nullifier Set
+
+<CodeBlock language="plaintext" filename="Nullifier Tracking">
+{`Nullifier Set (PDAs on Solana)
+├── Each spent UTXO produces a unique nullifier
+├── Nullifiers are stored as Program Derived Addresses (PDAs)
+├── Before accepting a transaction:
+│   → Check nullifier PDA doesn't exist
+│   → If exists: REJECT (double-spend attempt)
+│   → If new: CREATE PDA (mark as spent)
+└── Nullifiers cannot be linked to their source UTXO`}
+</CodeBlock>
+
+### Config Account & Address Lookup Table
+
+| Component | Purpose |
+|-----------|---------|
+| **Config Account** | Stores protocol parameters (max deposit, fee rate) |
+| **ALT (Address Lookup Table)** | 12 pre-registered addresses to reduce TX size |
+
+### Relayer API
+
+The relayer serves as a privacy-preserving intermediary — it indexes encrypted outputs, provides Merkle proofs, and submits withdrawal transactions so the recipient's wallet never appears on-chain.
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/config` | GET | Fee rates and configuration |
+| `/deposit` | POST | Relay SOL deposit (pre-signed by sender) |
+| `/deposit/spl` | POST | Relay SPL token deposit (pre-signed) |
+| `/withdraw` | POST | Execute SOL withdrawal (relayer signs) |
+| `/withdraw/spl` | POST | Execute SPL withdrawal (relayer signs) |
+| `/tree/state` | GET | Current Merkle root + next index |
+| `/tree/proof/{index}` | GET | Merkle proof for a specific leaf |
+| `/utxos/range?start=X&end=Y` | GET | Batch fetch encrypted outputs |
+| `/utxos/check/{output}` | GET | Poll deposit confirmation |
+
+<Callout type="warning">
+The relayer **cannot steal funds** (it never has access to private keys) and **cannot break privacy** (it cannot link deposits to withdrawals). Its worst-case attack is **censorship** — refusing to relay transactions — but funds remain safely in the pool and can be withdrawn through an alternative relayer.
+</Callout>
+
+## Further Reading
+
+- [UTXO System](/docs/utxo-system) — The UTXOs that ZK proofs operate on
+- [Cryptography](/docs/cryptography) — The hash functions and encryption used in the circuit
+- [Privacy Model](/docs/privacy-model) — How ZK proofs enable the overall privacy guarantees

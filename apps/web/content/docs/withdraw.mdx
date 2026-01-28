@@ -1,0 +1,65 @@
+# Withdraw
+
+Move funds from your shielded account to any Solana wallet.
+
+## Withdrawing
+
+<Steps>
+<Step>
+**Connect Your Wallet**
+
+Use the same wallet you created payment links with to access your shielded account.
+</Step>
+
+<Step>
+**Select Token and Amount**
+
+Choose which token and how much to withdraw.
+</Step>
+
+<Step>
+**Enter Destination**
+
+Provide the Solana address to receive funds. For best privacy, use a fresh wallet.
+</Step>
+
+<Step>
+**Confirm Withdrawal**
+
+Approve the transaction. Funds appear in the destination wallet with no link to your deposits.
+</Step>
+</Steps>
+
+## Privacy Best Practices
+
+<Callout type="warning">
+While Velum's ZK proofs cryptographically break the on-chain link between deposits and withdrawals, observers can still attempt to correlate transactions by analyzing timing patterns and amounts. Following these practices significantly reduces that risk.
+</Callout>
+
+### Use a fresh non-custodial wallet
+
+Always withdraw to a brand-new wallet with no prior transaction history (e.g. a fresh Phantom, Solflare, or Backpack account). If you need to move funds to a centralized exchange or custodial app afterward, send from the new wallet — never directly from your shielded account to a KYC'd address.
+
+### Deposit round amounts
+
+When depositing, use whole numbers (1 SOL, 10 USDC) rather than precise fractional amounts. Unique values like 3.7291 SOL are trivial to match between a deposit and withdrawal on a block explorer.
+
+### Wait before withdrawing
+
+Avoid withdrawing immediately after a deposit. The longer funds remain in the shielded pool, the larger the anonymity set grows and the harder it becomes to correlate timing between events.
+
+### Split withdrawals over time
+
+Rather than withdrawing your full balance at once, break it into smaller portions spread across different days. This makes amount-based correlation significantly more difficult.
+
+### Swap tokens
+
+Consider converting a portion of your shielded balance into a different token before withdrawing. Moving between SOL, USDC, and USDT adds another layer of separation from the original deposit.
+
+## Fees
+
+Withdrawals require standard Solana network fees (~0.000005 SOL), deducted from your shielded SOL balance.
+
+<Callout type="warning">
+Ensure you have enough SOL in your shielded balance to cover withdrawal fees.
+</Callout>

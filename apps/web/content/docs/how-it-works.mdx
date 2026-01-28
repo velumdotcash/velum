@@ -1,0 +1,41 @@
+# How It Works
+
+Velum enables private payments on Solana through a simple three-step flow.
+
+<PaymentFlowDiagram />
+
+## Supported Tokens
+
+<TokenCards />
+
+<Callout type="warning">
+All transactions require a small amount of SOL for gas fees (~$0.01), even when paying with USDC or USDT.
+</Callout>
+
+## Privacy & Security
+
+<PrivacyShield />
+
+## Cryptographic Foundation
+
+### Zero-Knowledge Proofs
+
+Velum uses ZK-SNARKs to prove transaction validity without revealing details. When you:
+
+- **Deposit**: A ZK proof shows you deposited valid funds without revealing the amount
+- **Withdraw**: A ZK proof shows you own the funds without revealing the deposit source
+- **Transfer**: The entire flow is shielded from public view
+
+### Key Derivation
+
+Your shielded keys are derived from your wallet signature:
+
+1. You sign a message with your Solana wallet
+2. The signature is processed through a key derivation function
+3. Two keypairs are generated:
+   - **UTXO keypair**: For ownership proofs (BN254 curve)
+   - **Encryption keypair**: For private notes (X25519)
+
+<Callout type="info">
+The same wallet signature always produces the same shielded keys, ensuring deterministic access to your account.
+</Callout>

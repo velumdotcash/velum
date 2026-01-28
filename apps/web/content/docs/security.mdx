@@ -1,0 +1,101 @@
+# Security & Privacy
+
+Learn about Velum's security model and privacy guarantees.
+
+## Privacy Model
+
+### What's Private
+
+| Data | Visibility |
+|------|------------|
+| Sender wallet address | Hidden from recipient |
+| Recipient wallet address | Hidden from sender |
+| Transaction amounts | Encrypted on-chain |
+| Transaction history | Encrypted, only visible to account owner |
+| Payment link memos | Private to recipient |
+
+### What's Public
+
+| Data | Visibility |
+|------|------------|
+| Total value in Velum pools | Public (aggregate only) |
+| Network fees | Public |
+| Transaction timestamps | Public |
+
+## Cryptographic Foundation
+
+### Zero-Knowledge Proofs
+
+Velum uses ZK-SNARKs to prove transaction validity without revealing details. When you:
+
+- **Deposit**: A ZK proof shows you deposited valid funds without revealing the amount
+- **Withdraw**: A ZK proof shows you own the funds without revealing the deposit source
+- **Transfer**: The entire flow is shielded from public view
+
+### Key Derivation
+
+Your shielded keys are derived from your wallet signature:
+
+1. You sign a message with your Solana wallet
+2. The signature is processed through a key derivation function
+3. Two keypairs are generated:
+   - **UTXO keypair**: For ownership proofs (BN254 curve)
+   - **Encryption keypair**: For private notes (X25519)
+
+<Callout type="info">
+The same wallet signature always produces the same shielded keys, ensuring deterministic access to your account.
+</Callout>
+
+## Security Best Practices
+
+### For Users
+
+- **Keep your seed phrase safe** - Loss of your wallet means loss of your shielded funds
+- **Verify payment links** - Only pay links from trusted sources
+- **Use fresh wallets for withdrawals** - Maximizes unlinkability
+- **Don't share your signature** - Anyone with your wallet signature can derive your shielded keys
+
+### For Developers
+
+- **Server-side key derivation** - Never derive keys in browser JavaScript
+- **Validate all inputs** - Sanitize and validate API requests
+- **Use HTTPS** - Always encrypt data in transit
+- **Implement rate limiting** - Protect against abuse
+
+<Callout type="warning">
+Never expose wallet signatures or derived keys in client-side code or logs.
+</Callout>
+
+## Smart Contract Security
+
+The Velum smart contracts are:
+
+- Open source and auditable
+- Built on proven cryptographic primitives
+- Deployed on Solana mainnet
+
+## Threat Model
+
+### What Velum Protects Against
+
+- Public blockchain surveillance
+- Wallet tracking and profiling
+- Payment correlation attacks
+- Address reuse vulnerabilities
+
+### What Velum Does NOT Protect Against
+
+- Malware on your device
+- Phishing attacks
+- Loss of wallet private keys
+- Voluntary disclosure of information
+
+## Reporting Security Issues
+
+Found a vulnerability? Please report it responsibly:
+
+- Email: security@velum.app
+- Do not disclose publicly before we've had time to address it
+- Include detailed reproduction steps
+
+We appreciate responsible disclosure and may offer bug bounties for significant findings.

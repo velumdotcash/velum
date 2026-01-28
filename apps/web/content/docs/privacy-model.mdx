@@ -1,0 +1,60 @@
+import { Callout, VisibilityMatrix, PrivacyFlowDiagram } from '@/components/docs';
+
+# Privacy Model
+
+How Velum achieves transaction privacy on a public blockchain — what's hidden, what's visible, and how the pieces fit together.
+
+## System Overview
+
+Velum uses **Zero-Knowledge Proofs (ZKPs)** on top of Solana to enable private payments. The system is built on three pillars:
+
+1. **Shielded Pool** — A UTXO-based pool where funds are stored as encrypted commitments
+2. **ZK Proofs** — Mathematical proofs that verify transactions without revealing details
+3. **Asymmetric Encryption** — Third-party deposits where only the recipient can read the UTXO data
+
+<Callout type="info">
+Velum is built on top of [Privacy Cash](https://privacycash.org), inheriting its audited shielded pool infrastructure and ZK verification contracts on Solana.
+</Callout>
+
+## Who Sees What
+
+The core privacy guarantee is that **no on-chain observer can link a deposit to a withdrawal**. The ZK proof breaks this connection completely.
+
+<VisibilityMatrix />
+
+### Privacy Guarantees
+
+| Property | Guaranteed | Mechanism |
+|----------|:----------:|-----------|
+| Sender cannot know recipient's wallet | Yes | Paylink exposes only derived keys |
+| Recipient never appears on-chain | Yes | Derived keys + relayer for withdrawal |
+| Deposit-to-withdrawal link invisible | Yes | ZK proof breaks the connection |
+| Amounts hidden inside the pool | No | Visible on deposit and withdrawal TX |
+| Sender anonymous as depositor | No | Sender signs the deposit transaction |
+
+<Callout type="tip">
+While the protocol breaks on-chain deposit-withdrawal links, timing and amount analysis can still weaken privacy. See our [privacy best practices](/docs/withdraw#privacy-best-practices) for mitigation strategies.
+</Callout>
+
+## Privacy Flow
+
+The diagram below illustrates what data remains on-chain (visible to anyone) versus what is hidden by the combination of ZK proofs and encryption.
+
+<PrivacyFlowDiagram />
+
+## Core Components
+
+| Component | Role | Privacy Contribution |
+|-----------|------|---------------------|
+| **Shielded Pool** | Stores UTXO commitments in a Merkle tree | Hides individual balances |
+| **Nullifier Set** | Tracks spent UTXOs | Prevents double-spend without revealing which UTXO |
+| **ZK Verifier** | Validates proofs on-chain | Ensures correctness without revealing inputs |
+| **Relayer** | Submits withdrawal TXs | Hides recipient's wallet from the chain |
+| **NaCl Box (V3)** | Encrypts notes asymmetrically | Only intended recipient can read UTXO data |
+
+## Further Reading
+
+- [Cryptography](/docs/cryptography) — Key derivation, encryption schemes, and wire formats
+- [UTXO System](/docs/utxo-system) — UTXO structure, commitments, and scanning
+- [Zero-Knowledge Proofs](/docs/zero-knowledge) — Circuit design and on-chain verification
+- [SDK Modifications](/docs/sdk-modifications) — How the privacy-cash SDK was adapted for paylinks

@@ -1,0 +1,187 @@
+import { CodeBlock, Callout, KeyDerivationDiagram, EncryptionComparison } from '@/components/docs';
+
+# Cryptography
+
+The complete cryptographic stack behind Velum — from wallet signature to encrypted on-chain notes.
+
+## Key Derivation
+
+Everything starts from a single wallet signature. One signed message generates the entire key hierarchy deterministically.
+
+<KeyDerivationDiagram />
+
+### Implementation
+
+<CodeBlock language="typescript" filename="Key Derivation Flow" showLineNumbers>
+{`// 1. Sign message (once, at wallet connect)
+const signature = await wallet.signMessage(
+  "Privacy Money account sign in"
+);
+// signature: Uint8Array(64)
+
+// 2. V1 Key (legacy, backward compatibility)
+const v1Key = signature.slice(0, 31);               // 31 bytes
+
+// 3. V2 Key (current symmetric encryption)
+const v2Key = keccak256(signature);                  // 32 bytes
+
+// 4. UTXO Private Keys (BN254 curve, used in ZK circuit)
+const utxoPrivKeyV1 = sha256(v1Key);                 // hex string
+const utxoPrivKeyV2 = keccak256(v2Key);              // hex string
+// → Keypair: privkey mod FIELD_SIZE
+// → pubkey = Poseidon(privkey)
+
+// 5. Asymmetric Key (for paylink encryption)
+const asymmetricSeed = sha256(v2Key);                // 32 bytes
+const x25519Keypair = nacl.box.keyPair.fromSecretKey(
+  asymmetricSeed
+);
+// x25519Keypair.publicKey → shared in paylink (32 bytes)
+// x25519Keypair.secretKey → never exposed, used to decrypt`}
+</CodeBlock>
+
+### Key Properties
+
+| Property | Guarantee |
+|----------|-----------|
+| **Deterministic** | Same wallet → same signature → same keys (always) |
+| **Recoverable** | Change device, reconnect same wallet → same shielded account |
+| **Unlinkable** | Derived keys (BN254, X25519) cannot be linked to the wallet address |
+| **One-way** | From X25519 pubkey, impossible to derive the original wallet |
+
+<Callout type="info">
+The same wallet signature always produces the same keys. Your shielded account is recoverable on any device using the same wallet — no seed phrases or backup required beyond the wallet itself.
+</Callout>
+
+---
+
+## Encryption Schemes
+
+The commitment stored on-chain hides the amount, but the owner needs to recover the UTXO data (amount, blinding, index) to spend it. This data is encrypted and stored on-chain as an "encrypted note."
+
+<EncryptionComparison />
+
+---
+
+## Wire Format
+
+The encrypted note is stored on-chain as a binary blob. The format includes metadata for efficient scanning and the encrypted UTXO data.
+
+### Compact V2 — 0xC2 (Self-Deposit, Current)
+
+<CodeBlock language="plaintext" filename="Compact V2 Wire Format">
+{`Byte:   0    1         9         21        37
+        ┌────┬─────────┬─────────┬─────────┬──────────────┐
+        │Tag │ RecipID │   IV    │ AuthTag │ Ciphertext   │
+        │(1B)│ (8 B)   │ (12 B)  │ (16 B)  │ (45 B)       │
+        └────┴─────────┴─────────┴─────────┴──────────────┘
+         0xC2  SHA256    random    GCM tag   AES-256-GCM
+               (pubkey)            integrity encrypted
+               [0:8]                         UTXO data
+
+Total: 82 bytes (was 122 with standard V2 + binary v1)`}
+</CodeBlock>
+
+### Compact V3 — 0xC3 (Paylink Deposit, Current)
+
+<CodeBlock language="plaintext" filename="Compact V3 Wire Format">
+{`Byte:   0    1         9         41        65
+        ┌────┬─────────┬─────────┬─────────┬──────────────┐
+        │Tag │ RecipID │ EphPub  │  Nonce  │ Ciphertext   │
+        │(1B)│ (8 B)   │ (32 B)  │ (24 B)  │ (variable)   │
+        └────┴─────────┴─────────┴─────────┴──────────────┘
+         0xC3  SHA256    X25519    random    NaCl Box
+               (pubkey)  ephemeral           encrypted
+               [0:8]     public key          UTXO data
+
+Total: 126 bytes (was 166 with standard V3 + binary v1)`}
+</CodeBlock>
+
+<Callout type="info">
+Compact formats use a single-byte tag (0xC2/0xC3) instead of the 9-byte version+schema header, saving 8 bytes per output. Combined with binary v2 encoding (no mintAddress), this saves 40 bytes per output versus the original standard format.
+</Callout>
+
+### Standard V2 Schema 0x02 (Legacy, Read-Only)
+
+<CodeBlock language="plaintext" filename="Standard V2 Wire Format">
+{`Byte:   0         8    9         17        29        45
+        ┌─────────┬────┬─────────┬─────────┬─────────┬──────────────┐
+        │ Version │Sch.│ RecipID │   IV    │ AuthTag │ Ciphertext   │
+        │ (8 B)   │(1B)│ (8 B)   │ (12 B)  │ (16 B)  │ (variable)   │
+        └─────────┴────┴─────────┴─────────┴─────────┴──────────────┘
+         0x00...02  0x02  SHA256    random    GCM tag   AES-256-GCM
+                          (pubkey)            integrity encrypted
+                          [0:8]                         UTXO data`}
+</CodeBlock>
+
+### Standard V3 Schema 0x02 (Legacy, Read-Only)
+
+<CodeBlock language="plaintext" filename="Standard V3 Wire Format">
+{`Byte:   0         8    9         17        49        73
+        ┌─────────┬────┬─────────┬─────────┬─────────┬──────────────┐
+        │ Version │Sch.│ RecipID │ EphPub  │  Nonce  │ Ciphertext   │
+        │ (8 B)   │(1B)│ (8 B)   │ (32 B)  │ (24 B)  │ (variable)   │
+        └─────────┴────┴─────────┴─────────┴─────────┴──────────────┘
+         0x00...03  0x02  SHA256    X25519    random    NaCl Box
+                          (pubkey)  ephemeral           encrypted
+                          [0:8]     public key          UTXO data`}
+</CodeBlock>
+
+### Plaintext Content (Before Encryption)
+
+UTXO data is encoded as a compact binary buffer before encryption. The current format (v2) omits the token mint address — the caller provides it from Merkle tree context, saving 32 bytes per output.
+
+<CodeBlock language="plaintext" filename="Binary v2 (Current — 45 bytes)">
+{`Byte:   0    1         9         41        45
+        ┌────┬─────────┬─────────┬─────────┐
+        │Flag│ Amount  │Blinding │  Index  │
+        │(1B)│ (8 B)   │ (32 B)  │ (4 B)   │
+        └────┴─────────┴─────────┴─────────┘
+         0x02  big-end.  big-end.  big-end.
+               uint64    BN254     uint32
+
+mintAddress is NOT serialized — the caller provides it
+from the per-token Merkle tree being scanned.`}
+</CodeBlock>
+
+<CodeBlock language="plaintext" filename="Binary v1 (Legacy — 77 bytes, read-only)">
+{`Byte:   0    1         9         41        45        77
+        ┌────┬─────────┬─────────┬─────────┬─────────┐
+        │Flag│ Amount  │Blinding │  Index  │MintAddr │
+        │(1B)│ (8 B)   │ (32 B)  │ (4 B)   │ (32 B)  │
+        └────┴─────────┴─────────┴─────────┴─────────┘
+         0x01  big-end.  big-end.  big-end.  raw bytes
+               uint64    BN254     uint32    base58-decoded`}
+</CodeBlock>
+
+<Callout type="info">
+Existing UTXOs encrypted with v1 binary format or legacy pipe-delimited text are still readable. The decoder auto-detects the format by checking the first byte and buffer length.
+</Callout>
+
+### Format Evolution
+
+The `recipientIdHash` field (8 bytes) was added in Schema 0x02 to enable O(1) early termination during UTXO scanning — instead of attempting decryption on every note, recipients can first check if the hash matches their public key.
+
+<CodeBlock language="plaintext" filename="Format Evolution">
+{`Standard schema 0x01 (legacy):  [version(8)][schema(1)][crypto_payload...]
+Standard schema 0x02 (legacy):  [version(8)][schema(1)][recipientIdHash(8)][crypto_payload...]
+Compact V2 (current):           [0xC2][recipientIdHash(8)][IV(12)][authTag(16)][ciphertext...]
+Compact V3 (current):           [0xC3][recipientIdHash(8)][ephemeralPK(32)][nonce(24)][ciphertext...]
+                                  ^^^^
+                                  Single-byte tag replaces 9-byte version+schema header
+
+Binary plaintext v1 (legacy):   [0x01][amount(8)][blinding(32)][index(4)][mintAddress(32)]  = 77 bytes
+Binary plaintext v2 (current):  [0x02][amount(8)][blinding(32)][index(4)]                   = 45 bytes
+                                                                           ^^^^^^^^^^^^^^^^
+                                                                           mintAddress removed`}
+</CodeBlock>
+
+<Callout type="info">
+The recipientIdHash is computed as `SHA256(utxoPublicKey)[0:8]` — the first 8 bytes of the SHA-256 hash of the recipient's BN254 public key. This provides a fast pre-filter without revealing the full public key.
+</Callout>
+
+## Further Reading
+
+- [UTXO System](/docs/utxo-system) — How UTXOs use these cryptographic primitives
+- [Zero-Knowledge Proofs](/docs/zero-knowledge) — How ZK circuits verify without revealing
+- [Privacy Model](/docs/privacy-model) — The overall privacy guarantees these primitives enable

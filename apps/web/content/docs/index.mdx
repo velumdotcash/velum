@@ -1,0 +1,60 @@
+import { ValueProposition, FeatureCard, TechDiagram, Callout } from '@/components/docs';
+
+<ValueProposition />
+
+## Why Velum?
+
+On public blockchains, every transaction is visible. If someone knows your wallet, they can see everything: your balance, who pays you, who you pay, your entire financial history.
+
+**This lack of privacy is the biggest barrier to mainstream crypto adoption.**
+
+Velum changes this. Using Zero-Knowledge cryptography, we enable private transactions on Solana. Neither sender nor recipient reveal their wallet addresses.
+
+<TechDiagram />
+
+## Core Features
+
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-8">
+  <FeatureCard
+    icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
+    title="Total Privacy"
+    description="No public link between sender and recipient. Your financial activity stays private."
+  />
+  <FeatureCard
+    icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>}
+    title="Lightning Fast"
+    description="Transactions confirm in under a second. No waiting, no friction."
+  />
+  <FeatureCard
+    icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+    title="Minimal Fees"
+    description="Just 0.15% on deposits plus standard Solana gas fees. No hidden charges."
+  />
+  <FeatureCard
+    icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>}
+    title="Non-Custodial"
+    description="You always control your funds. We never have access to your private keys."
+  />
+</div>
+
+## Use Cases
+
+- **Freelancers** — Get paid without exposing your main wallet or financial history
+- **Donations** — Accept contributions while protecting donor and recipient privacy
+- **E-commerce** — Accept crypto payments without linking every sale to your business
+- **Tips & Support** — Creators receive support without revealing their balance
+- **Friends & Family** — Split expenses without awkward balance exposure
+
+<Callout type="info">
+Your funds are always secure. Velum is built on [Privacy Cash](https://privacycash.org), an audited ZK privacy protocol on Solana with proven infrastructure.
+</Callout>
+
+## Get Started
+
+Ready to experience private payments? Choose your path:
+
+| I want to... | Go to |
+|--------------|-------|
+| Receive private payments | [Receive Payments →](/docs/receive) |
+| Understand how it works | [How It Works →](/docs/how-it-works) |
+| Integrate into my app | [Developer Guide →](/docs/developer-guide) |

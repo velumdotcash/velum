@@ -1,0 +1,279 @@
+import { CodeBlock, Callout, Steps, Step } from '@/components/docs';
+
+# API Reference
+
+Complete reference for the Velum REST API. Integrate private payments into your application.
+
+## Base URL
+
+<CodeBlock language="plaintext">
+https://velum.cash/api
+</CodeBlock>
+
+## Access Modes
+
+Velum exposes two access modes for its API:
+
+| Mode | Auth | Rate Limits | Use Case |
+|------|------|-------------|----------|
+| **Public** (`/api/paylinks`) | None (IP-based rate limiting) | 10 creates/min, 60 gets/min | Web app frontend |
+| **Authenticated** (`/api/v1/...`) | API key via `x-api-key` header | Per-key configurable | Server-side integrations |
+
+## Authentication
+
+Authenticated v1 endpoints require an API key in the `x-api-key` header:
+
+<CodeBlock language="bash" filename="Request Header">
+x-api-key: pk_live_your_api_key_here
+</CodeBlock>
+
+---
+
+## Paylink Endpoints
+
+### Create Payment Link
+
+<CodeBlock language="plaintext">
+POST /v1/paylinks
+</CodeBlock>
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `recipientUtxoPubkey` | string | Yes | BN254 curve point for UTXO ownership |
+| `recipientEncryptionKey` | string | Yes | X25519 public key for note encryption |
+| `token` | string | No | `"SOL"`, `"USDC"`, `"USDT"`, or `"ANY"` (default) |
+| `amountLamports` | string | No | Fixed amount in base units (omit = sender decides) |
+| `memo` | string | No | Private memo, max 140 characters |
+| `expiresAt` | string | No | ISO 8601 expiration timestamp |
+
+**Example Request:**
+
+<CodeBlock language="bash" filename="cURL">
+{`curl -X POST https://velum.cash/api/v1/paylinks \\
+  -H "Content-Type: application/json" \\
+  -H "x-api-key: pk_live_your_api_key" \\
+  -d '{
+    "recipientUtxoPubkey": "21888242871839...",
+    "recipientEncryptionKey": "base64encodedkey...",
+    "token": "USDC",
+    "amountLamports": "1000000"
+  }'`}
+</CodeBlock>
+
+**Response:**
+
+<CodeBlock language="json" filename="Response 201 Created">
+{`{
+  "id": "clx1234567890",
+  "url": "https://velum.cash/pay/clx1234567890"
+}`}
+</CodeBlock>
+
+---
+
+### Get Payment Link
+
+<CodeBlock language="plaintext">
+GET /v1/paylinks/:id
+</CodeBlock>
+
+**Response:**
+
+<CodeBlock language="json" filename="Response 200 OK">
+{`{
+  "id": "clx1234567890",
+  "recipientUtxoPubkey": "21888242871839...",
+  "recipientEncryptionKey": "base64encodedkey...",
+  "token": "USDC",
+  "amountLamports": "1000000",
+  "memo": null,
+  "createdAt": "2026-01-20T10:30:00.000Z"
+}`}
+</CodeBlock>
+
+---
+
+## Transaction Endpoints
+
+### Log Transaction
+
+Record a deposit or withdrawal transaction.
+
+<CodeBlock language="plaintext">
+POST /v1/transactions
+</CodeBlock>
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `type` | string | Yes | `"deposit"` or `"withdraw"` |
+| `token` | string | Yes | Token symbol (e.g., `"SOL"`, `"USDC"`) |
+| `amountLamports` | string | Yes | Amount in base units |
+| `signature` | string | Yes | Solana transaction signature |
+| `status` | string | No | `"pending"`, `"confirmed"`, or `"failed"` |
+| `utxoPubkey` | string | No | Associated UTXO public key |
+| `paylinkId` | string | No | Associated payment link ID |
+
+**Response:**
+
+<CodeBlock language="json" filename="Response 201 Created">
+{`{
+  "id": "clx9876543210",
+  "signature": "5xK9m...",
+  "status": "confirmed",
+  "createdAt": "2026-01-20T12:00:00.000Z"
+}`}
+</CodeBlock>
+
+---
+
+### List Transactions
+
+<CodeBlock language="plaintext">
+GET /v1/transactions
+</CodeBlock>
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `utxoPubkey` | string | Filter by UTXO public key |
+| `type` | string | Filter by `"deposit"` or `"withdraw"` |
+| `token` | string | Filter by token symbol |
+| `limit` | number | Results per page (default 50) |
+| `offset` | number | Pagination offset |
+
+**Response:**
+
+<CodeBlock language="json" filename="Response 200 OK">
+{`{
+  "transactions": [
+    {
+      "id": "clx9876543210",
+      "type": "deposit",
+      "token": "USDC",
+      "amountLamports": "1000000",
+      "signature": "5xK9m...",
+      "status": "confirmed",
+      "utxoPubkey": "21888...",
+      "paylinkId": "clx1234567890",
+      "paylinkMemo": "Order #12345",
+      "createdAt": "2026-01-20T12:00:00.000Z"
+    }
+  ],
+  "total": 42,
+  "limit": 50,
+  "offset": 0
+}`}
+</CodeBlock>
+
+---
+
+### Update Transaction Status
+
+<CodeBlock language="plaintext">
+PATCH /v1/transactions/:signature
+</CodeBlock>
+
+**Request Body:**
+
+<CodeBlock language="json">
+{`{ "status": "confirmed" }`}
+</CodeBlock>
+
+**Response:**
+
+<CodeBlock language="json" filename="Response 200 OK">
+{`{
+  "signature": "5xK9m...",
+  "status": "confirmed",
+  "updatedAt": "2026-01-20T12:05:00.000Z"
+}`}
+</CodeBlock>
+
+---
+
+## Error Handling
+
+All errors follow a consistent format:
+
+<CodeBlock language="json" filename="Error Response">
+{`{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid token specified",
+    "details": {
+      "issues": [{ "path": ["token"], "message": "Invalid enum value" }]
+    }
+  }
+}`}
+</CodeBlock>
+
+### Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Invalid request parameters |
+| `UNAUTHORIZED` | 401 | Missing or invalid API key |
+| `NOT_FOUND` | 404 | Resource not found |
+| `EXPIRED` | 410 | Payment link has expired |
+| `RATE_LIMITED` | 429 | Too many requests |
+| `CONFLICT` | 409 | Duplicate resource |
+| `INTERNAL_ERROR` | 500 | Server error |
+
+---
+
+## Rate Limits
+
+**Public endpoints** (no auth, IP-based):
+- Create paylink: 10 requests / 60 seconds
+- Get paylink: 60 requests / 60 seconds
+
+**Authenticated v1 endpoints** (per API key):
+- Configurable per key, default 100 requests / 60 seconds
+
+Rate limit headers are included in authenticated responses:
+
+<CodeBlock language="plaintext">
+X-RateLimit-Remaining: 95
+</CodeBlock>
+
+---
+
+## SDKs & Libraries
+
+### [`@velumdotcash/api`](https://www.npmjs.com/package/@velumdotcash/api) — REST Client
+
+Lightweight TypeScript client for the v1 API (zero runtime dependencies):
+
+<CodeBlock language="bash">
+npm install @velumdotcash/api
+</CodeBlock>
+
+<CodeBlock language="typescript" filename="Usage">
+{`import { VelumClient } from "@velumdotcash/api";
+
+const client = new VelumClient({ apiKey: "pk_live_..." });
+
+const paylink = await client.paylinks.create({
+  recipientUtxoPubkey: "21888242871839...",
+  recipientEncryptionKey: "base64key...",
+  token: "USDC",
+  amountLamports: "1000000",
+});
+
+console.log(paylink.url);`}
+</CodeBlock>
+
+### [`@velumdotcash/sdk`](https://www.npmjs.com/package/@velumdotcash/sdk) — ZK Crypto SDK
+
+Full TypeScript SDK for client-side ZK operations (deposit, withdraw, proof generation):
+
+<CodeBlock language="bash">
+npm install @velumdotcash/sdk
+</CodeBlock>
+
+See the [Developer Guide](/docs/developer-guide) for detailed usage.

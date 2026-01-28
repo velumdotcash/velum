@@ -1,0 +1,49 @@
+# Receive Payments
+
+Create a payment link and share it to receive funds privately.
+
+## Creating a Payment Link
+
+<Steps>
+<Step>
+**Connect Your Wallet**
+
+Select your Solana wallet (Phantom, Solflare, etc.) and sign the message to initialize your shielded account.
+</Step>
+
+<Step>
+**Configure Your Link**
+
+Choose token, amount, and memo options for your payment link.
+</Step>
+
+<Step>
+**Share the Link**
+
+Copy the generated URL or QR code and share it with the sender.
+</Step>
+</Steps>
+
+## Link Options
+
+<FeatureCard
+  icon={<svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" /><path d="M12 8v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>}
+  title="Token Selection"
+  description="Choose SOL, USDC, USDT, or Any. Selecting Any lets senders pick which token to send."
+/>
+
+<FeatureCard
+  icon={<svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M4 4h16v16H4z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M8 12h8M8 8h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>}
+  title="Amount"
+  description="Set a fixed amount for invoices, or leave open for donations and tips."
+/>
+
+<FeatureCard
+  icon={<svg viewBox="0 0 24 24" fill="none" className="w-5 h-5"><path d="M4 6h16M4 10h10M4 14h12M4 18h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>}
+  title="Memo"
+  description="Private note visible only to you. Use it to track who paid or reference an invoice."
+/>
+
+<Callout type="info">
+Payment links can be used multiple times. Each payment goes to your shielded account.
+</Callout>

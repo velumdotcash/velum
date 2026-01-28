@@ -1,0 +1,333 @@
+import { CodeBlock, Callout, SDKFlowDiagram } from '@/components/docs';
+
+# SDK Modifications
+
+Velum's privacy layer is powered by a **forked version** of the [Privacy Cash SDK](https://github.com/Privacy-Cash/privacy-cash-sdk). This page documents the key modifications that enable fully private paylinks — allowing third-party deposits where only the recipient can claim funds.
+
+## Overview
+
+The official Privacy Cash SDK was designed for self-deposits only: a user deposits funds into a shielded pool and later withdraws them. Velum extends this to support **paylinks** — shareable URLs where anyone can deposit funds that only a designated recipient can claim.
+
+<SDKFlowDiagram />
+
+### Summary of Changes
+
+| # | Modification | Category |
+|---|-------------|----------|
+| 1 | Wallet-Adapter Constructor | API Change |
+| 2 | Asymmetric Encryption (V3) | New Feature |
+| 3 | Pubkey-Only UTXO Mode | New Feature |
+| 4 | Third-Party Deposits | New Feature |
+| 5 | Recipient Key Retrieval | New Feature |
+| 6 | Recipient ID Hash | Optimization |
+| 7 | Schema Versioning | Format Evolution |
+| 8-10 | Debug Logging & Error Handling | Diagnostics |
+| 11 | Browser Compatibility | Environment |
+| 12 | Compact Encryption Headers | Optimization |
+| 13 | Binary UTXO V2 Encoding | Optimization |
+
+---
+
+## 1. Wallet-Adapter Constructor
+
+### Problem
+
+The official SDK requires a Solana `Keypair` (private key) for initialization — incompatible with browser wallet extensions (Phantom, Solflare) that never expose private keys.
+
+<CodeBlock language="typescript" filename="Official SDK" showLineNumbers>
+{`// Requires private key — impossible in browser wallets
+constructor(rpcUrl: string, keypair: string | Uint8Array | number[])`}
+</CodeBlock>
+
+<CodeBlock language="typescript" filename="Our Fork" showLineNumbers>
+{`// Wallet-adapter mode — works with browser extensions
+constructor({
+  RPC_url: string,
+  publicKey?: PublicKey,           // From wallet.publicKey
+  signature?: Uint8Array,          // From wallet.signMessage()
+  transactionSigner?: (tx) => Promise<VersionedTransaction>,
+  circuitPath?: string,            // URL path to circuit files
+  // ... optional debug/storage params
+})`}
+</CodeBlock>
+
+### Usage
+
+<CodeBlock language="typescript" filename="Browser Integration" showLineNumbers>
+{`const sdk = new Velum({
+  RPC_url: rpcUrl,
+  publicKey: wallet.publicKey,
+  signature: await wallet.signMessage("Privacy Money account sign in"),
+  transactionSigner: async (tx) => wallet.signTransaction(tx),
+  circuitPath: "/circuit"
+});`}
+</CodeBlock>
+
+---
+
+## 2. Asymmetric Encryption (V3)
+
+### Problem
+
+The official SDK only supports symmetric encryption (V1/V2) — only the depositor can decrypt UTXO data. For paylinks, a **sender** deposits for a **recipient** who needs to decrypt.
+
+### Solution
+
+Added **NaCl Box** (X25519 + XSalsa20-Poly1305) encryption:
+
+<CodeBlock language="typescript" filename="V3 Asymmetric API" showLineNumbers>
+{`// Sender encrypts for recipient (anyone can call with recipient's pubkey)
+encryptAsymmetric(data: Buffer, recipientPublicKey: Uint8Array): Buffer
+
+// Recipient decrypts (requires their secret key)
+private decryptV3(encryptedData: Buffer): Buffer | null
+
+// Key derivation (from wallet signature)
+const v2Key = keccak256(signature);
+const seed = sha256(v2Key);
+const x25519Keypair = nacl.box.keyPair.fromSecretKey(seed);
+// .publicKey → shared in paylink
+// .secretKey → kept private, used to decrypt`}
+</CodeBlock>
+
+<Callout type="info">
+Each V3 encryption generates an **ephemeral keypair** (use-once). This provides forward secrecy — even if the recipient's key is later compromised, past deposits remain secure.
+</Callout>
+
+---
+
+## 3. Pubkey-Only UTXO Mode
+
+### Problem
+
+The official SDK requires a full `Keypair` to create a UTXO. For paylink deposits, the sender only knows the recipient's **public key**.
+
+### Solution
+
+<CodeBlock language="typescript" filename="Pubkey-Only UTXO" showLineNumbers>
+{`// Official: requires full keypair
+new Utxo({ lightWasm, amount, keypair: fullKeypair })
+
+// Fork: accepts public key alone
+new Utxo({ lightWasm, amount, publicKey: recipientBN254Pubkey })
+
+// Behavior:
+// • getCommitment() → works (only needs pubkey)
+// • getNullifier() → throws (requires private key)
+// → Only the recipient can spend this UTXO`}
+</CodeBlock>
+
+| Operation | Pubkey-Only | Full Keypair |
+|-----------|:-----------:|:------------:|
+| Create commitment | Yes | Yes |
+| Store on-chain | Yes | Yes |
+| Compute nullifier | No | Yes |
+| Spend UTXO | No | Yes |
+
+---
+
+## 4. Third-Party Deposits
+
+### Problem
+
+The official `deposit()` always creates output UTXOs for the depositor (consolidation pattern). Paylinks need to create UTXOs for a **different recipient**.
+
+### Solution
+
+<CodeBlock language="typescript" filename="Extended deposit() API" showLineNumbers>
+{`deposit({
+  // ... standard params (amount, connection, etc.)
+
+  // NEW: Optional recipient parameters
+  recipientUtxoPublicKey?: BN | string,   // Recipient's BN254 pubkey
+  recipientEncryptionKey?: Uint8Array      // Recipient's X25519 pubkey
+})`}
+</CodeBlock>
+
+### Logic Changes
+
+<CodeBlock language="typescript" filename="Third-Party Deposit Logic" showLineNumbers>
+{`// 1. Skip UTXO fetch for third-party deposits
+if (!recipientUtxoPublicKey) {
+  existingUtxos = await getUtxos(...);  // Self: consolidate existing
+} else {
+  // Third-party: fresh deposit only, no consolidation
+}
+
+// 2. Create output UTXO with correct ownership
+if (recipientUtxoPublicKey) {
+  output = new Utxo({ publicKey: recipientUtxoPublicKey });  // Pubkey-only
+} else {
+  output = new Utxo({ keypair: senderKeypair });             // Self
+}
+
+// 3. Encrypt with correct scheme
+if (recipientEncryptionKey) {
+  encrypted = encryptAsymmetric(data, recipientEncryptionKey); // V3
+} else {
+  encrypted = encrypt(data);  // V2 (symmetric, self)
+}`}
+</CodeBlock>
+
+<Callout type="warning">
+Both `recipientUtxoPublicKey` and `recipientEncryptionKey` must be provided together. The first determines UTXO ownership; the second determines who can decrypt the note.
+</Callout>
+
+---
+
+## 5. Recipient Key Retrieval
+
+### Problem
+
+Paylinks need to encode the recipient's cryptographic keys. The official SDK doesn't expose them.
+
+### Solution
+
+<CodeBlock language="typescript" filename="Key Export Methods" showLineNumbers>
+{`// X25519 public key (for V3 asymmetric encryption)
+sdk.getAsymmetricPublicKey(): Uint8Array  // 32 bytes
+
+// BN254 public key (for UTXO ownership)
+await sdk.getShieldedPublicKey(): Promise<string>  // Decimal string
+
+// Usage in paylink creation:
+const paylink = await fetch('/api/paylinks', {
+  method: 'POST',
+  body: JSON.stringify({
+    recipientEncryptionKey: base64(sdk.getAsymmetricPublicKey()),
+    recipientUtxoPubkey: await sdk.getShieldedPublicKey(),
+    token: 'SOL'
+  })
+});`}
+</CodeBlock>
+
+---
+
+## 6. Recipient ID Hash (Early Termination)
+
+### Problem
+
+Balance scanning requires attempting decryption on **all** UTXOs in the pool. With thousands of UTXOs, this takes tens of seconds.
+
+### Solution
+
+Added an 8-byte `recipientIdHash` to the wire format for O(1) pre-filtering:
+
+<CodeBlock language="typescript" filename="Early Termination" showLineNumbers>
+{`// Hash derivation
+recipientIdHash = SHA256(x25519PublicKey)[0:8]  // First 8 bytes
+
+// Fast pre-filter (before expensive crypto)
+shouldAttemptDecryption(buffer: Buffer): boolean {
+  const storedHash = buffer.subarray(9, 17);   // From encrypted blob
+  const myHash = this.deriveRecipientIdHash();  // From my key
+  return storedHash.equals(myHash);             // 8-byte compare
+}
+
+// Performance:
+// Before: 50,000 × decrypt attempt = ~30 seconds
+// After:  50,000 × hash compare + ~5 × decrypt = ~0.5 seconds`}
+</CodeBlock>
+
+---
+
+## 7-10. Supporting Modifications
+
+### Schema Versioning (#7)
+
+A schema byte at offset 8 enables format evolution without breaking backward compatibility. Schema 0x02 (current) adds the `recipientIdHash` field.
+
+### Debug Logging (#8) & Custom Errors (#9)
+
+Typed error hierarchy (`ZKProofError`, `InsufficientBalanceError`, `EncryptionError`, etc.) with `recoverable` flags, plus per-UTXO decryption diagnostics for development.
+
+### Decryption Failure Summary (#10)
+
+Balance methods return diagnostic summaries showing total UTXOs scanned, successfully decrypted, skipped (hash mismatch), and failed — helping verify all expected funds are found.
+
+---
+
+## 11. Browser Compatibility
+
+### Problem
+
+The official SDK uses Node.js APIs (`fs`, `path`, `crypto`) unavailable in browsers.
+
+### Changes
+
+| Node.js API | Browser Replacement |
+|-------------|-------------------|
+| `fs.readFile` (circuit files) | `fetch()` with IndexedDB cache |
+| `crypto.createCipheriv` | Web Crypto API (`crypto.subtle`) |
+| `localStorage` | Configurable `Storage` interface |
+| Filesystem paths | URL-based `circuitPath` parameter |
+
+<Callout type="tip">
+All cryptographic operations (ZK proof generation, encryption, key derivation) happen entirely in the browser. No private data ever leaves the client.
+</Callout>
+
+---
+
+## 12. Compact Encryption Headers
+
+### Problem
+
+Standard encryption headers use a 9-byte prefix (8-byte version + 1-byte schema) per encrypted output. With two outputs per transaction, this wastes 18 bytes against Solana's 1232-byte transaction limit.
+
+### Solution
+
+Replaced the 9-byte header with a single-byte tag: `0xC2` for symmetric (AES-256-GCM) and `0xC3` for asymmetric (NaCl Box). The recipient ID hash follows immediately at byte 1 instead of byte 9.
+
+<CodeBlock language="plaintext" filename="Header Comparison">
+{`Standard: [version(8)][schema(1)][recipientIdHash(8)][crypto_payload...]  = 17 byte overhead
+Compact:  [tag(1)][recipientIdHash(8)][crypto_payload...]                  =  9 byte overhead
+                                                                Saves 8 bytes per output`}
+</CodeBlock>
+
+Tags use high bytes (0xC2/0xC3) to avoid collision with legacy V1 random IV bytes, which have negligible probability of starting with these values.
+
+---
+
+## 13. Binary UTXO V2 Encoding
+
+### Problem
+
+Binary v1 format includes a 32-byte `mintAddress` in each encrypted UTXO payload. This is redundant because the receiver already knows the token from the per-token Merkle tree being scanned, and the ZK commitment already binds to the mint on-chain.
+
+### Solution
+
+Dropped `mintAddress` from the binary encoding. The caller provides it from context during decryption.
+
+<CodeBlock language="plaintext" filename="Binary Encoding Comparison">
+{`Binary v1 (0x01, 77 bytes):  [flag][amount:8][blinding:32][index:4][mintAddress:32]
+Binary v2 (0x02, 45 bytes):  [flag][amount:8][blinding:32][index:4]
+                                                                     ^^^^^^^^^^^^^^^^
+                                                                     Removed (32 bytes saved)
+
+Savings per transaction: 32 bytes × 2 outputs = 64 bytes`}
+</CodeBlock>
+
+<Callout type="info">
+The decoder auto-detects all three formats: binary v2 (0x02 + 45 bytes), binary v1 (0x01 + 77 bytes), and legacy pipe-delimited text. Existing UTXOs remain fully readable.
+</Callout>
+
+---
+
+## Security Properties
+
+The fork maintains and extends the security guarantees of the original SDK:
+
+| Property | Mechanism |
+|----------|-----------|
+| **Sender can't spend recipient's UTXO** | Pubkey-only mode — no private key available |
+| **Only recipient decrypts** | V3 asymmetric — requires secret key |
+| **Forward secrecy** | Ephemeral keypair per V3 encryption |
+| **No key leakage** | Wallet-adapter mode — private key never exposed |
+| **RecipientIdHash privacy** | Derived from X25519 key (unlinkable to wallet) |
+| **Authenticated encryption** | NaCl Box (Poly1305) prevents tampering |
+
+## Further Reading
+
+- [Privacy Model](/docs/privacy-model) — How these modifications enable the full privacy flow
+- [Cryptography](/docs/cryptography) — The encryption primitives used in V3
+- [UTXO System](/docs/utxo-system) — How pubkey-only UTXOs work in the shielded pool

@@ -1,0 +1,56 @@
+# Pay
+
+Send private payments using Velum payment links.
+
+## Sending a Payment
+
+<Steps>
+<Step>
+**Open the Payment Link**
+
+Click the link you received to open the Velum payment page.
+</Step>
+
+<Step>
+**Connect Your Wallet**
+
+Connect any Solana wallet with enough of the requested token plus SOL for fees.
+</Step>
+
+<Step>
+**Enter Amount**
+
+If the amount isn't pre-set, enter how much to send.
+</Step>
+
+<Step>
+**Confirm Payment**
+
+Approve the transaction. Funds are sent privately to the recipient.
+</Step>
+</Steps>
+
+## What Happens
+
+1. **Your wallet signs the transaction** — standard Solana approval
+2. **Funds are shielded** — tokens are converted to private balance
+3. **Recipient receives privately** — funds appear in their shielded account
+4. **No public trace** — the blockchain shows no sender/recipient link
+
+## Fees
+
+| Fee Type | Cost |
+|----------|------|
+| Velum fee | 0.15% of deposit amount (same token) |
+| Network fee | ~0.000005 SOL |
+| Priority fee | ~0.0001 SOL |
+
+The Velum fee is a separate transfer instruction included in the same transaction. You'll see it in your wallet's approval popup before confirming.
+
+<Callout type="tip">
+Keep a small amount of SOL in your wallet for gas fees, even when paying with USDC or USDT.
+</Callout>
+
+## Troubleshooting
+
+<TroubleshootingCards />

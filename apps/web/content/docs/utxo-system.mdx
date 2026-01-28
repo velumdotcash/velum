@@ -1,0 +1,150 @@
+import { CodeBlock, Callout, ScanningFlowDiagram } from '@/components/docs';
+
+# UTXO System
+
+How funds are represented, committed, and discovered within the shielded pool.
+
+## UTXO Structure
+
+A UTXO (Unspent Transaction Output) represents funds in the shielded pool. Unlike traditional account balances, each UTXO is a discrete unit of value with cryptographic ownership.
+
+<CodeBlock language="typescript" filename="UTXO Fields" showLineNumbers>
+{`class Utxo {
+  amount: BN           // Value in base units (lamports, SPL base units)
+  blinding: BN         // Random factor hiding the amount in the commitment
+  pubkey: BN           // BN254 public key of the owner
+  keypair?: Keypair    // BN254 keypair (only present if we own this UTXO)
+  index: number        // Position in the Merkle tree
+  mintAddress: string  // Token mint (SOL = "So1111...1112")
+  version: 'v1'|'v2'  // Key derivation version
+}`}
+</CodeBlock>
+
+<Callout type="info">
+The `mintAddress` field is used in the commitment hash and for UTXO filtering, but is **not serialized** in the current binary v2 encrypted format. Instead, it is provided by the caller from the per-token Merkle tree context during decryption — saving 32 bytes per output on-chain.
+</Callout>
+
+## Commitment
+
+The commitment is what goes on-chain — a Poseidon hash that hides all values while enabling ZK verification.
+
+<CodeBlock language="plaintext" filename="Commitment Formula">
+{`commitment = Poseidon(amount, pubkey, blinding, mintAddressField)
+
+Properties:
+  • Hiding: Cannot extract amount, pubkey, or blinding from the hash
+  • Binding: Cannot find different inputs that produce the same hash
+  • Verifiable: ZK circuit can prove knowledge of inputs without revealing them`}
+</CodeBlock>
+
+<Callout type="info">
+The commitment uses the **Poseidon** hash function — specifically designed for efficient computation inside ZK circuits (SNARKs). Standard hashes like SHA-256 would be prohibitively expensive to prove in a circuit.
+</Callout>
+
+## Nullifier
+
+The nullifier prevents double-spending. When a UTXO is spent, its nullifier is published on-chain. If the same nullifier appears again, the transaction is rejected.
+
+<CodeBlock language="plaintext" filename="Nullifier Formula">
+{`nullifier = Poseidon(commitment, index, Sign(commitment, index))
+
+Key property: Requires the PRIVATE KEY to compute
+  → Only the owner can produce a valid nullifier
+  → Published on-chain when spending
+  → If seen before → double-spend rejected`}
+</CodeBlock>
+
+<Callout type="warning">
+Nullifiers are **unlinkable** to their source UTXO from an observer's perspective. An on-chain observer sees a nullifier hash but cannot determine which commitment it corresponds to — this is what breaks the deposit-to-withdrawal link.
+</Callout>
+
+## Creation Modes
+
+UTXOs are created differently depending on whether you're depositing for yourself or for a paylink recipient.
+
+<CodeBlock language="typescript" filename="UTXO Creation Modes" showLineNumbers>
+{`// SELF-DEPOSIT: Depositing for yourself
+const selfUtxo = new Utxo({
+  amount: BN(1_500_000_000),   // 1.5 SOL
+  keypair: myBN254Keypair,      // Full keypair (private + public)
+});
+// → Has private key → can generate nullifier → can spend
+
+// PAYLINK DEPOSIT: Depositing for a recipient
+const paylinkUtxo = new Utxo({
+  amount: BN(1_500_000_000),   // 1.5 SOL
+  publicKey: recipientBN254Pubkey,  // Only public key
+});
+// → No private key → can generate commitment → CANNOT spend
+// → The recipient, with their private key, can spend later`}
+</CodeBlock>
+
+| Mode | Has Private Key | Can Compute Nullifier | Can Spend |
+|------|:--------------:|:--------------------:|:---------:|
+| Self-deposit | Yes | Yes | Yes |
+| Paylink deposit | No (pubkey only) | No | No (only recipient can) |
+
+---
+
+## UTXO Scanning
+
+### The Problem
+
+The shielded pool contains **all** encrypted UTXOs from **all** users. To find your own, you'd need to attempt decryption on every single one. With thousands of UTXOs, this is prohibitively slow.
+
+### The Solution: Recipient ID Hash
+
+Each encrypted note includes an 8-byte `recipientIdHash` — a truncated hash of the owner's public key. Before attempting expensive decryption, recipients perform a cheap byte comparison.
+
+<ScanningFlowDiagram />
+
+### Implementation
+
+<CodeBlock language="typescript" filename="Early Termination Check" showLineNumbers>
+{`private shouldAttemptDecryption(encryptedBuffer: Buffer): boolean {
+  const firstByte = encryptedBuffer[0];
+
+  // Compact format (current): single-byte tag at position 0
+  // recipientIdHash is at bytes 1-8
+  if (firstByte === 0xC2 || firstByte === 0xC3) {
+    const storedHash = encryptedBuffer.subarray(1, 9);   // 8 bytes in blob
+    const myHash = this.deriveRecipientIdHash();          // 8 bytes from my key
+    return storedHash.equals(myHash);                     // Fast compare
+  }
+
+  // Standard format (legacy): schema version at byte 8
+  // recipientIdHash is at bytes 9-17
+  const schemaVersion = encryptedBuffer[8];
+  if (schemaVersion === 0x02) {
+    const storedHash = encryptedBuffer.subarray(9, 17);
+    const myHash = this.deriveRecipientIdHash();
+    return storedHash.equals(myHash);
+  }
+
+  // Schema 0x01 (legacy) → must attempt decrypt (no hash in format)
+  return true;
+}`}
+</CodeBlock>
+
+### False Positive Rate
+
+The 8-byte hash provides 2^64 possible values. The probability of a false positive (hash collision) is approximately:
+
+<CodeBlock language="plaintext" filename="Collision Analysis">
+{`P(false positive) = 1 / 2^64 ≈ 5.4 × 10⁻²⁰
+
+With 50,000 UTXOs in the pool:
+  Expected false positives = 50,000 / 2^64 ≈ 0.0000000000000027
+
+In practice: effectively zero false positives ever`}
+</CodeBlock>
+
+<Callout type="tip">
+The `recipientIdHash` does NOT compromise privacy. An observer cannot reverse the hash to identify the recipient — it's derived from the BN254 public key which is itself unlinkable to the wallet address.
+</Callout>
+
+## Further Reading
+
+- [Cryptography](/docs/cryptography) — The encryption schemes that protect UTXO data
+- [Zero-Knowledge Proofs](/docs/zero-knowledge) — How spending is verified without revealing which UTXO
+- [Privacy Model](/docs/privacy-model) — How UTXOs fit into the overall privacy architecture

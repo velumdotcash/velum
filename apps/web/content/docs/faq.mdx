@@ -1,0 +1,95 @@
+import { FAQSection, FAQItem, Callout } from '@/components/docs';
+
+# Frequently Asked Questions
+
+Everything you need to know about using Velum for private payments.
+
+<FAQSection title="General">
+  <FAQItem question="What is Velum?">
+    Velum is a private payment system built on Solana. It allows you to send and receive cryptocurrency without revealing your wallet address to the other party. Think of it like PayPal or Venmo, but on blockchain — and completely private.
+  </FAQItem>
+
+  <FAQItem question="How does Velum provide privacy?">
+    Velum uses Zero-Knowledge (ZK) cryptography to shield transaction details. When you receive a payment, the funds go to a "shielded account" that cannot be linked to your public wallet address. The ZK proof verifies the transaction is valid without revealing who sent what to whom.
+  </FAQItem>
+
+  <FAQItem question="Is Velum custodial?">
+    **No.** Velum is fully non-custodial. You always maintain control of your funds through your wallet's private keys. We never have access to your funds — ever.
+  </FAQItem>
+
+  <FAQItem question="Which wallets are supported?">
+    Any Solana-compatible wallet works with Velum:
+    - Phantom
+    - Solflare
+    - Backpack
+    - Ledger (via Phantom or Solflare)
+  </FAQItem>
+</FAQSection>
+
+<FAQSection title="Payments">
+  <FAQItem question="How do payment links work?">
+    Payment links contain your shielded public keys (not your wallet address). When someone pays the link, the funds go directly to your shielded account. Only you can see and access these funds.
+  </FAQItem>
+
+  <FAQItem question="Can payment links be used multiple times?">
+    Yes! Payment links can receive unlimited payments. Each payment is deposited into your shielded account.
+  </FAQItem>
+
+  <FAQItem question="Do payment links expire?">
+    By default, no. You can optionally set an expiration date when creating a link for time-sensitive payments.
+  </FAQItem>
+
+  <FAQItem question="What tokens can I receive?">
+    Currently: **SOL**, **USDC**, and **USDT**. You can also accept "Any" to let senders choose which token to send.
+  </FAQItem>
+
+  <FAQItem question="What happens to my paylink history if I clear browser data?">
+    Your paylink history is stored locally in your browser for privacy. If you clear your browser data, the list disappears from your dashboard. However, your paylinks remain active and continue to receive payments — you simply lose the ability to view them in the dashboard. Your funds are never affected: shielded keys are re-derived from your wallet, and balances are always recoverable from the blockchain.
+  </FAQItem>
+</FAQSection>
+
+<FAQSection title="Privacy & Security">
+  <FAQItem question="Can anyone see my shielded balance?">
+    **No.** Your shielded balance is encrypted and only accessible when you sign a message with your wallet. Not even Velum can see your balance.
+  </FAQItem>
+
+  <FAQItem question="Can the sender see my wallet address?">
+    **No.** Senders only see your shielded public keys, which are cryptographically unlinkable to your wallet address.
+  </FAQItem>
+
+  <FAQItem question="Can I be traced through withdrawals?">
+    The ZK proof breaks the on-chain link between deposits and withdrawals. However, timing and amount patterns can still be analyzed by observers. Follow our [privacy best practices](/docs/withdraw#privacy-best-practices) — use fresh wallets, round amounts, time delays, and split withdrawals.
+  </FAQItem>
+
+  <FAQItem question="Is my transaction history stored?">
+    Encrypted transaction data is stored on Solana's blockchain. Only you can decrypt and view your transaction history using your wallet signature.
+  </FAQItem>
+</FAQSection>
+
+<FAQSection title="Technical">
+  <FAQItem question="What is a shielded account?">
+    A shielded account is a private balance associated with cryptographic keys derived from your wallet signature. It's separate from your regular Solana wallet but controlled by the same keys. Think of it as a private vault only you can access.
+  </FAQItem>
+
+  <FAQItem question="How are my keys derived?">
+    When you sign the initialization message with your wallet, we use that signature to deterministically derive your shielded keypairs using industry-standard cryptographic functions (SHA-256, Keccak-256, X25519). The same wallet always produces the same shielded account.
+  </FAQItem>
+
+  <FAQItem question="What happens if I lose access to my wallet?">
+    If you lose access to your wallet, you lose access to your shielded account. This is the tradeoff for true non-custodial privacy.
+
+    <Callout type="warning">
+      There is no way to recover a shielded account without the original wallet. **Always keep your seed phrase safe!**
+    </Callout>
+  </FAQItem>
+</FAQSection>
+
+<FAQSection title="Fees">
+  <FAQItem question="What are Velum's fees?">
+    Velum charges a **0.15% fee** on deposits, paid in the same token being deposited. This fee is collected as a separate transfer instruction in the same transaction — fully transparent and visible in your wallet's approval popup. In addition, you pay standard Solana network fees (typically less than $0.01 per transaction).
+  </FAQItem>
+
+  <FAQItem question="Do I need SOL for gas?">
+    Yes. All Solana transactions require a small amount of SOL for gas, even when sending USDC or USDT. Keep ~0.01 SOL in your wallet for transaction fees.
+  </FAQItem>
+</FAQSection>
