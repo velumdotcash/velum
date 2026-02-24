@@ -45,26 +45,25 @@ This creates real problems:
 
 Velum enables **private payment links** on Solana. Create a link, share it, receive funds — without ever revealing your wallet address.
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                                                                             │
-│    RECIPIENT                         SENDER                                 │
-│    ─────────                         ──────                                 │
-│                                                                             │
-│    1. Connect wallet                                                        │
-│    2. Create paylink ──────────────► velum.cash/pay/abc123                  │
-│                                              │                              │
-│                                              └──────► 3. Opens link         │
-│                                                       4. Pays any amount    │
-│                                                       5. Funds deposited    │
-│    6. See balance in dashboard                           to shielded pool   │
-│    7. Withdraw to ANY address ◄────────────────────────────────────────     │
-│                                                                             │
-│    ✓ Sender never sees recipient's wallet                                   │
-│    ✓ Recipient never appears on-chain                                       │
-│    ✓ No link between deposit and withdrawal                                 │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+```mermaid
+sequenceDiagram
+    participant R as Recipient
+    participant V as Velum
+    participant S as Sender
+    participant P as Shielded Pool
+
+    R->>V: 1. Connect wallet
+    R->>V: 2. Create paylink
+    V-->>S: velum.cash/pay/abc123
+    S->>V: 3. Open link
+    S->>P: 4. Pay any amount
+    Note over P: Funds deposited to<br/>shielded pool
+    R->>V: 5. See balance in dashboard
+    R->>P: 6. Withdraw to ANY wallet
+
+    Note over R,P: Sender never sees recipient's wallet
+    Note over R,P: Recipient never appears on-chain
+    Note over R,P: No link between deposit and withdrawal
 ```
 
 ### Privacy Guarantees
@@ -118,27 +117,28 @@ Only the recipient can decrypt. Each encryption uses a fresh ephemeral keypair f
 
 ### Architecture Diagram
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                             VELUM STACK                                  │
-├──────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐       │
-│  │     Browser      │  │ Vercel Serverless│  │  Solana Mainnet  │       │
-│  │                  │  │                  │  │                  │       │
-│  │ @velumdotcash/sdk│  │   Next.js API    │  │   Privacy Cash   │       │
-│  │    ZK proofs     │─▶│   Paylinks DB    │─▶│   Shielded Pool  │       │
-│  │   Encryption     │  │  Rate limiting   │  │                  │       │
-│  └──────────────────┘  └──────────────────┘  └──────────────────┘       │
-│           │                     │                     │                  │
-│           ▼                     ▼                     ▼                  │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐       │
-│  │    IndexedDB     │  │    PostgreSQL    │  │   Relayer API    │       │
-│  │  Circuit cache   │  │     (Prisma)     │  │  Merkle proofs   │       │
-│  │   UTXO cache     │  │ Paylink metadata │  │  TX submission   │       │
-│  └──────────────────┘  └──────────────────┘  └──────────────────┘       │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph Client["Browser"]
+        SDK["@velumdotcash/sdk\nZK proofs · Encryption"]
+        IDB["IndexedDB\nCircuit cache · UTXO cache"]
+        SDK --> IDB
+    end
+
+    subgraph Server["Vercel Serverless"]
+        API["Next.js API\nPaylinks DB · Rate limiting"]
+        PG["PostgreSQL (Prisma)\nPaylink metadata"]
+        API --> PG
+    end
+
+    subgraph Chain["Solana Mainnet"]
+        Pool["Privacy Cash\nShielded Pool"]
+        Relayer["Relayer API\nMerkle proofs · TX submission"]
+        Pool --> Relayer
+    end
+
+    SDK -->|API calls| API
+    API -->|transactions| Pool
 ```
 
 ---
